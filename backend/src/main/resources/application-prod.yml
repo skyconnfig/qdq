@@ -1,0 +1,48 @@
+# ============================
+# 知识竞赛抢答系统 - 生产环境配置
+# ============================
+
+spring:
+  # 数据源配置
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${DB_HOST:localhost}:${DB_PORT:3306}/quiz_competition?useUnicode=true&characterEncoding=utf8&zeroDateTimeBehavior=convertToNull&useSSL=true&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+    username: ${DB_USERNAME:quiz_prod}
+    password: ${DB_PASSWORD}
+    hikari:
+      minimum-idle: 10
+      maximum-pool-size: 50
+      idle-timeout: 30000
+      connection-timeout: 30000
+      max-lifetime: 1800000
+
+  # Redis 配置
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      database: 0
+      lettuce:
+        pool:
+          max-active: 32
+          max-wait: -1ms
+          max-idle: 16
+          min-idle: 4
+
+# 日志配置
+logging:
+  level:
+    com.qdq: WARN
+    org.springframework.web: WARN
+  file:
+    name: /var/log/quiz-competition/app.log
+  logback:
+    rollingpolicy:
+      max-file-size: 100MB
+      max-history: 30
+
+# MyBatis-Plus 生产环境关闭SQL日志
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl

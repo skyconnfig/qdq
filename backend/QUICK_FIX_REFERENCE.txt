@@ -1,0 +1,203 @@
+═══════════════════════════════════════════════════════════════════════════
+                          快速参考指南 - 密码问题排查
+═══════════════════════════════════════════════════════════════════════════
+
+【前端密码输入】
+────────────────────────────────────────────────────────────────────────────
+检查点: 密码是否以明文形式发送
+POST /api/auth/login
+{
+  "username": "admin",
+  "password": "admin123"
+}
+
+注意: 不要在前端加密密码，BCrypt加密在后端完成
+
+
+【后端加密逻辑】
+────────────────────────────────────────────────────────────────────────────
+1. WebMvcConfig.java
+   @Bean
+   public BCryptPasswordEncoder passwordEncoder() {
+       return new BCryptPasswordEncoder(12);
+   }
+
+2. AuthService.java - 密码验证
+   passwordEncoder.matches(request.getPassword(), user.getPasswordHash())
+   ✓ 第一个参数: 用户输入的明文密码
+   ✓ 第二个参数: 数据库中存储的哈希值
+
+3. UserService.java - 密码加密
+   user.setPasswordHash(passwordEncoder.encode(request.getPassword()))
+
+
+【数据库哈希值】
+────────────────────────────────────────────────────────────────────────────
+表: sys_user
+关键字段:
+- username: admin
+- password_plain: admin123
+- password_hash: $2a$12$R3h2cIPjj0yramPvVS9H2OPST9/PgBkqquzi.Ss7KIUgO2PKh2Gau
+- status: 1 (必须是1，否则账号被禁用)
+
+验证SQL:
+SELECT id, username, password_plain, password_hash, status 
+FROM sys_user 
+WHERE username = 'admin';
+
+
+【完整流程】
+────────────────────────────────────────────────────────────────────────────
+用户输入 "admin123"
+    ↓
+POST /api/auth/login { username: "admin", password: "admin123" }
+    ↓
+AuthService.login()
+  ├─ 查询用户: SELECT * FROM sys_user WHERE username='admin'
+  ├─ 检查状态: status = 1 ?
+  ├─ 密码验证: passwordEncoder.matches("admin123", hash) ?
+  │  ✓ true → 继续
+  │  ✗ false → 抛出异常: "用户名或密码错误"
+  ├─ 生成Token
+  └─ 返回登录信息
+    ↓
+登录成功，返回Token
+
+
+【快速诊断】
+────────────────────────────────────────────────────────────────────────────
+问题1: 编译错误 - 程序包org.mindrot.bcrypt不存在
+✓ 已修复: pom.xml 改为 spring-security-crypto
+
+问题2: 密码验证失败
+步骤:
+1. 检查数据库: 
+   SELECT password_hash FROM sys_user WHERE username='admin';
+   
+2. 应该是: $2a$12$R3h2cIPjj0yramPvVS9H2OPST9/PgBkqquzi.Ss7KIUgO2PKh2Gau
+   
+3. 如果不是，运行:
+   UPDATE sys_user 
+   SET password_hash = '$2a$12$R3h2cIPjj0yramPvVS9H2OPST9/PgBkqquzi.Ss7KIUgO2PKh2Gau',
+       password_plain = 'admin123'
+   WHERE username = 'admin';
+
+问题3: 用户状态异常
+步骤:
+1. 检查: SELECT status FROM sys_user WHERE username='admin';
+2. 应该是: 1
+3. 如果不是: UPDATE sys_user SET status=1 WHERE username='admin';
+
+问题4: 用户不存在
+步骤:
+1. 检查: SELECT * FROM sys_user WHERE username='admin';
+2. 如果没有，运行 schema.sql 初始化数据库
+
+
+【测试方法】
+────────────────────────────────────────────────────────────────────────────
+1. 编译并运行密码测试工具:
+   mvn clean compile
+   java -cp target/classes com.qdq.util.PasswordTestUtil
+   
+   预期输出: ✓ 登录成功
+
+2. 使用 curl 测试 API:
+   curl -X POST http://localhost:8080/api/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"username":"admin","password":"admin123","rememberMe":false}'
+   
+   预期结果: code=0, 返回token
+
+3. 查看应用日志:
+   grep "用户登录成功" logs/application.log
+   
+   预期: 用户登录成功: admin
+
+
+【关键文件位置】
+────────────────────────────────────────────────────────────────────────────
+配置:
+  - WebMvcConfig.java
+    src/main/java/com/qdq/config/WebMvcConfig.java
+
+服务:
+  - AuthService.java
+    src/main/java/com/qdq/service/AuthService.java
+  - UserService.java
+    src/main/java/com/qdq/service/UserService.java
+
+数据库:
+  - schema.sql
+    src/main/resources/db/schema.sql
+  - update_admin_password.sql
+    update_admin_password.sql
+
+测试:
+  - PasswordTestUtil.java
+    src/main/java/com/qdq/util/PasswordTestUtil.java
+
+文档:
+  - PASSWORD_DEBUG_GUIDE.md (详细指南)
+  - PASSWORD_FLOW_CHECKLIST.md (完整检查清单)
+
+
+【执行清单】
+────────────────────────────────────────────────────────────────────────────
+初始化/修复步骤:
+
+[ ] 1. 更新 pom.xml - 使用 spring-security-crypto
+      mvn clean install
+
+[ ] 2. 重新启动应用
+      mvn spring-boot:run
+
+[ ] 3. 执行 schema.sql 初始化或 update_admin_password.sql 更新
+      mysql -u root -p quiz_competition < update_admin_password.sql
+
+[ ] 4. 运行密码测试工具验证
+      java -cp target/classes com.qdq.util.PasswordTestUtil
+
+[ ] 5. 使用 curl 测试登录 API
+
+[ ] 6. 检查应用日志，看是否有"用户登录成功: admin"
+
+
+【常见密码错误消息含义】
+────────────────────────────────────────────────────────────────────────────
+"用户名或密码错误"
+  原因: 用户不存在 或 密码不匹配
+  排查: 检查用户是否存在，密码哈希是否正确
+
+"账号已被禁用，请联系管理员"
+  原因: status != 1
+  排查: UPDATE sys_user SET status=1 WHERE username='admin'
+
+"原密码错误"
+  原因: 修改密码时，旧密码验证失败
+  排查: 确保旧密码输入正确
+
+
+【还原/重置步骤】
+────────────────────────────────────────────────────────────────────────────
+如果一切出问题，完整重置:
+
+1. 删除数据库:
+   DROP DATABASE quiz_competition;
+
+2. 重新创建:
+   mysql -u root -p < src/main/resources/db/schema.sql
+
+3. 重新启动应用
+
+4. 使用默认凭证登录:
+   username: admin
+   password: admin123
+
+
+═══════════════════════════════════════════════════════════════════════════
+                              需要帮助?
+════════════════════════════════════════════════════════════════════════════
+查看详细指南: PASSWORD_DEBUG_GUIDE.md
+查看完整清单: PASSWORD_FLOW_CHECKLIST.md
+运行测试工具: java -cp target/classes com.qdq.util.PasswordTestUtil
