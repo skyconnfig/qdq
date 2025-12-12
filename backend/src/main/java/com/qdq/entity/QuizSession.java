@@ -40,6 +40,9 @@ public class QuizSession {
     /** 当前题目索引 */
     private Integer currentQuestionIndex;
 
+    /** 开始前倒计时秒数 */
+    private Integer countdownSeconds;
+
     /** 开始时间 */
     private LocalDateTime startTime;
 

@@ -129,6 +129,50 @@ public class QuestionService extends ServiceImpl<QuizQuestionMapper, QuizQuestio
     }
 
     /**
+     * 是否是不该显示的题目(禁用的题目)
+     */
+    public void disable(Long id) {
+        QuizQuestion question = this.getById(id);
+        if (question == null) {
+            throw new BusinessException("题目不存在");
+        }
+        question.setIsDisabled(1);
+        this.updateById(question);
+    }
+
+    /**
+     * 整体次数、错误次数、答题用时等
+     */
+    public void enable(Long id) {
+        QuizQuestion question = this.getById(id);
+        if (question == null) {
+            throw new BusinessException("题目不存在");
+        }
+        question.setIsDisabled(0);
+        this.updateById(question);
+    }
+
+    /**
+     * 批量禁用题目
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void disableBatch(List<Long> ids) {
+        for (Long id : ids) {
+            disable(id);
+        }
+    }
+
+    /**
+     * 批量启用题目
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void enableBatch(List<Long> ids) {
+        for (Long id : ids) {
+            enable(id);
+        }
+    }
+
+    /**
      * 获取随机题目
      */
     public List<QuizQuestion> getRandomQuestions(Long categoryId, Integer type, 

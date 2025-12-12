@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, h } from 'vue'
-import { useMessage, useDialog, NButton, NTag, NSpace, NAvatar } from 'naive-ui'
-import { http } from '@/api/request'
-import { AddOutline, RefreshOutline, SearchOutline, TrashOutline } from '@vicons/ionicons5'
+import { useMessage, useDialog, NButton, NTag, NSpace, NAvatar, NIcon, type DataTableColumns } from 'naive-ui'
+import { getUserList, createUser, updateUser, deleteUser, batchDeleteUsers, resetUserPassword, type User, type UserQuery } from '@/api/modules'
+import { AddOutline, RefreshOutline, SearchOutline, TrashOutline, KeyOutline } from '@vicons/ionicons5'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -13,26 +13,36 @@ const data = ref<any[]>([])
 const total = ref(0)
 
 // 查询参数
-const queryParams = reactive({
+const queryParams = reactive<UserQuery>({
   page: 1,
   pageSize: 10,
   keyword: '',
-  status: null as number | null
+  status: null
 })
 
 // 表单弹窗
 const showModal = ref(false)
 const modalTitle = ref('新建用户')
-const formData = reactive({
-  id: null as number | null,
+const formData = reactive<User>({
   username: '',
   password: '',
   name: '',
   phone: '',
   email: '',
   status: 1,
-  roleIds: [] as number[]
+  roleIds: []
 })
+
+// 重置密码弹窗
+const showResetPwdModal = ref(false)
+const resetPwdData = reactive({
+  userId: null as number | null,
+  username: '',
+  newPassword: ''
+})
+
+// 批量操作
+const selectedRowKeys = ref<number[]>([])
 
 // 表单验证规则
 const formRules = {
@@ -60,7 +70,10 @@ const formRules = {
 }
 
 // 表格列定义
-const columns = [
+const columns: DataTableColumns<any> = [
+  {
+    type: 'selection'
+  } as any,
   {
     title: '用户',
     key: 'user',
@@ -99,14 +112,24 @@ const columns = [
   {
     title: '操作',
     key: 'actions',
-    width: 150,
-    render: (row: any) => h(NSpace, {}, () => [
+    width: 220,
+    fixed: 'right' as const,
+    render: (row: any) => h(NSpace, { size: 'small' }, () => [
       h(NButton, {
         size: 'small',
         quaternary: true,
         type: 'primary',
         onClick: () => handleEdit(row)
       }, () => '编辑'),
+      h(NButton, {
+        size: 'small',
+        quaternary: true,
+        type: 'warning',
+        onClick: () => handleResetPassword(row)
+      }, () => h(NSpace, { size: 4, align: 'center' }, () => [
+        h(NIcon, { component: KeyOutline }),
+        '重置密码'
+      ])),
       h(NButton, {
         size: 'small',
         quaternary: true,
@@ -121,12 +144,7 @@ const columns = [
 const loadData = async () => {
   loading.value = true
   try {
-    const res = await http.get('/users', {
-      page: queryParams.page,
-      pageSize: queryParams.pageSize,
-      keyword: queryParams.keyword,
-      status: queryParams.status
-    })
+    const res = await getUserList(queryParams)
     data.value = res.data.records || []
     total.value = res.data.total || 0
   } catch (error: any) {
@@ -160,7 +178,7 @@ const handlePageChange = (page: number) => {
 const handleCreate = () => {
   modalTitle.value = '新建用户'
   Object.assign(formData, {
-    id: null,
+    id: undefined,
     username: '',
     password: '',
     name: '',
@@ -197,7 +215,7 @@ const handleDelete = (row: any) => {
     negativeText: '取消',
     onPositiveClick: async () => {
       try {
-        await http.delete(`/users/${row.id}`)
+        await deleteUser(row.id)
         message.success('删除成功')
         loadData()
       } catch (error: any) {
@@ -207,14 +225,63 @@ const handleDelete = (row: any) => {
   })
 }
 
+// 批量删除
+const handleBatchDelete = () => {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请选择要删除的用户')
+    return
+  }
+  
+  dialog.warning({
+    title: '批量删除确认',
+    content: `确定要删除选中的 ${selectedRowKeys.value.length} 个用户吗？`,
+    positiveText: '确定',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await batchDeleteUsers(selectedRowKeys.value)
+        message.success('批量删除成功')
+        selectedRowKeys.value = []
+        loadData()
+      } catch (error: any) {
+        message.error(error.message)
+      }
+    }
+  })
+}
+
+// 重置密码
+const handleResetPassword = (row: any) => {
+  resetPwdData.userId = row.id
+  resetPwdData.username = row.username
+  resetPwdData.newPassword = ''
+  showResetPwdModal.value = true
+}
+
+// 提交重置密码
+const handleResetPasswordSubmit = async () => {
+  if (!resetPwdData.newPassword) {
+    message.warning('请输入新密码')
+    return
+  }
+  
+  try {
+    await resetUserPassword(resetPwdData.userId!, resetPwdData.newPassword)
+    message.success('密码重置成功')
+    showResetPwdModal.value = false
+  } catch (error: any) {
+    message.error(error.message)
+  }
+}
+
 // 提交表单
 const handleSubmit = async () => {
   try {
     if (formData.id) {
-      await http.put(`/users/${formData.id}`, formData)
+      await updateUser(formData.id, formData)
       message.success('更新成功')
     } else {
-      await http.post('/users', formData)
+      await createUser(formData)
       message.success('创建成功')
     }
     showModal.value = false
@@ -234,12 +301,24 @@ onMounted(() => {
     <!-- 页面标题 -->
     <div class="page-header">
       <h1 class="page-title">用户管理</h1>
-      <n-button type="primary" @click="handleCreate">
-        <template #icon>
-          <n-icon><AddOutline /></n-icon>
-        </template>
-        新建用户
-      </n-button>
+      <n-space>
+        <n-button
+          v-if="selectedRowKeys.length > 0"
+          type="error"
+          @click="handleBatchDelete"
+        >
+          <template #icon>
+            <n-icon><TrashOutline /></n-icon>
+          </template>
+          批量删除 ({{ selectedRowKeys.length }})
+        </n-button>
+        <n-button type="primary" @click="handleCreate">
+          <template #icon>
+            <n-icon><AddOutline /></n-icon>
+          </template>
+          新建用户
+        </n-button>
+      </n-space>
     </div>
     
     <!-- 搜索栏 -->
@@ -281,9 +360,11 @@ onMounted(() => {
     <!-- 数据表格 -->
     <n-card>
       <n-data-table
+        v-model:checked-row-keys="selectedRowKeys"
         :columns="columns"
         :data="data"
         :loading="loading"
+        :row-key="(row: any) => row.id"
         :pagination="{
           page: queryParams.page,
           pageSize: queryParams.pageSize,
@@ -345,6 +426,35 @@ onMounted(() => {
         <n-space justify="end">
           <n-button @click="showModal = false">取消</n-button>
           <n-button type="primary" @click="handleSubmit">确定</n-button>
+        </n-space>
+      </template>
+    </n-modal>
+    
+    <!-- 重置密码弹窗 -->
+    <n-modal
+      v-model:show="showResetPwdModal"
+      preset="card"
+      title="重置密码"
+      style="width: 450px"
+    >
+      <n-form label-placement="left" label-width="80">
+        <n-form-item label="用户名">
+          <n-input :value="resetPwdData.username" disabled />
+        </n-form-item>
+        <n-form-item label="新密码">
+          <n-input
+            v-model:value="resetPwdData.newPassword"
+            type="password"
+            placeholder="请输入新密码"
+            show-password-on="click"
+          />
+        </n-form-item>
+      </n-form>
+      
+      <template #action>
+        <n-space justify="end">
+          <n-button @click="showResetPwdModal = false">取消</n-button>
+          <n-button type="primary" @click="handleResetPasswordSubmit">确定</n-button>
         </n-space>
       </template>
     </n-modal>

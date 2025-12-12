@@ -7,8 +7,10 @@ import com.qdq.common.R;
 import com.qdq.dto.QuestionRequest;
 import com.qdq.entity.QuizQuestion;
 import com.qdq.service.QuestionService;
+import com.qdq.service.ImportExportService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
 
@@ -20,9 +22,11 @@ import java.util.List;
 public class QuestionController {
 
     private final QuestionService questionService;
+    private final ImportExportService importExportService;
 
-    public QuestionController(QuestionService questionService) {
+    public QuestionController(QuestionService questionService, ImportExportService importExportService) {
         this.questionService = questionService;
+        this.importExportService = importExportService;
     }
 
     /**
@@ -99,7 +103,69 @@ public class QuestionController {
     }
 
     /**
-     * 获取随机题目
+     * 上传题目模板
+     */
+    @GetMapping("/template")
+    public R<Void> getTemplate() {
+        // 上传模板文件
+        String filePath = "./uploads/question_template.xlsx";
+        importExportService.exportTemplate(filePath);
+        return R.ok("模板下载成功", null);
+    }
+
+    /**
+     * 导入题目
+     */
+    @PostMapping("/import")
+    @SaCheckRole({"SUPER_ADMIN", "HOST"})
+    public R<List<QuizQuestion>> importQuestions(@RequestParam("file") MultipartFile file,
+                                                  @RequestParam(required = false) Long bankId) {
+        List<QuizQuestion> questions = importExportService.importQuestions(file, bankId);
+        return R.ok("导入成功", questions);
+    }
+
+    /**
+     * 禁用题目
+     */
+    @PostMapping("/{id}/disable")
+    @SaCheckRole({"SUPER_ADMIN", "HOST"})
+    public R<Void> disableQuestion(@PathVariable Long id) {
+        questionService.disable(id);
+        return R.ok("禁用成功", null);
+    }
+
+    /**
+     * 启用题目
+     */
+    @PostMapping("/{id}/enable")
+    @SaCheckRole({"SUPER_ADMIN", "HOST"})
+    public R<Void> enableQuestion(@PathVariable Long id) {
+        questionService.enable(id);
+        return R.ok("启用成功", null);
+    }
+
+    /**
+     * 批量禁用题目
+     */
+    @PostMapping("/batch/disable")
+    @SaCheckRole({"SUPER_ADMIN", "HOST"})
+    public R<Void> disableBatch(@RequestBody List<Long> ids) {
+        questionService.disableBatch(ids);
+        return R.ok("批量禁用成功", null);
+    }
+
+    /**
+     * 批量启用题目
+     */
+    @PostMapping("/batch/enable")
+    @SaCheckRole({"SUPER_ADMIN", "HOST"})
+    public R<Void> enableBatch(@RequestBody List<Long> ids) {
+        questionService.enableBatch(ids);
+        return R.ok("批量启用成功", null);
+    }
+
+    /**
+     * 随机题目
      */
     @GetMapping("/random")
     public R<List<QuizQuestion>> getRandomQuestions(

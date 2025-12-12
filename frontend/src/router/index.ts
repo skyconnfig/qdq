@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router'
 import { useUserStore } from '@/stores/user'
+import { canAccessRoute, getDefaultRoute } from '@/config/roles'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -55,6 +56,38 @@ const routes: RouteRecordRaw[] = [
         name: 'Settings',
         component: () => import('@/views/settings/index.vue'),
         meta: { title: '系统设置', icon: 'SettingsOutline' }
+      },
+      // 主持人路由
+      {
+        path: 'host',
+        meta: { title: '主持人', roles: ['HOST', 'SUPER_ADMIN'] },
+        children: [
+          {
+            path: 'sessions',
+            name: 'HostSessions',
+            component: () => import('@/views/host/sessions.vue'),
+            meta: { title: '我的比赛', roles: ['HOST', 'SUPER_ADMIN'] }
+          },
+          {
+            path: 'control/:id',
+            name: 'HostControl',
+            component: () => import('@/views/host/control.vue'),
+            meta: { title: '控制台', roles: ['HOST', 'SUPER_ADMIN'] }
+          }
+        ]
+      },
+      // 选手路由
+      {
+        path: 'player',
+        meta: { title: '选手', roles: ['PLAYER', 'SUPER_ADMIN'] },
+        children: [
+          {
+            path: 'sessions',
+            name: 'PlayerSessions',
+            component: () => import('@/views/player/sessions.vue'),
+            meta: { title: '我的比赛', roles: ['PLAYER', 'SUPER_ADMIN'] }
+          }
+        ]
       }
     ]
   },
@@ -105,6 +138,37 @@ router.beforeEach(async (to, _from, next) => {
       next({ name: 'Login', query: { redirect: to.fullPath } })
       return
     }
+  }
+  
+  // 检查角色权限
+  const userRoles = userStore.userInfo?.roles || []
+  
+  // 如果访问根路径，跳转到默认页面
+  if (to.path === '/' || to.path === '/dashboard') {
+    const defaultRoute = getDefaultRoute(userRoles)
+    if (defaultRoute !== '/dashboard') {
+      next(defaultRoute)
+      return
+    }
+  }
+  
+  // 检查是否有权限访问该路由
+  if (to.meta.roles && Array.isArray(to.meta.roles)) {
+    const hasRole = to.meta.roles.some((role: string) => userRoles.includes(role))
+    if (!hasRole) {
+      // 没有权限，跳转到默认页面
+      const defaultRoute = getDefaultRoute(userRoles)
+      next(defaultRoute)
+      return
+    }
+  }
+  
+  // 使用角色配置检查路由访问权限
+  if (!canAccessRoute(userRoles, to.path)) {
+    // 没有权限，跳转到默认页面
+    const defaultRoute = getDefaultRoute(userRoles)
+    next(defaultRoute)
+    return
   }
   
   next()

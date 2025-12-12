@@ -93,11 +93,29 @@ CREATE TABLE IF NOT EXISTS quiz_category (
     deleted TINYINT DEFAULT 0 COMMENT '删除标记'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题目分类表';
 
+-- 题库表
+CREATE TABLE IF NOT EXISTS quiz_bank (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '题库ID',
+    name VARCHAR(100) NOT NULL COMMENT '题库名称',
+    description VARCHAR(500) COMMENT '题库描述',
+    total_questions INT DEFAULT 0 COMMENT '题目总数',
+    status TINYINT DEFAULT 1 COMMENT '状态(0:禁用 1:启用)',
+    is_disabled TINYINT DEFAULT 0 COMMENT '禁用标记(0:启用 1:禁用)',
+    created_by BIGINT COMMENT '创建人',
+    updated_by BIGINT COMMENT '更新人',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    deleted TINYINT DEFAULT 0 COMMENT '删除标记',
+    INDEX idx_status (status),
+    INDEX idx_is_disabled (is_disabled)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题库表';
+
 -- 题目表
 CREATE TABLE IF NOT EXISTS quiz_question (
     id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '题目ID',
     category_id BIGINT COMMENT '分类ID',
-    type TINYINT NOT NULL COMMENT '题型(1:单选 2:多选 3:判断 4:填空 5:主观)',
+    bank_id BIGINT COMMENT '所属题库ID',
+    type TINYINT NOT NULL COMMENT '题型(1:单选 2:多选 3:判断 4:填空 5:主观 6:音频 7:视频)',
     title VARCHAR(500) NOT NULL COMMENT '题目标题',
     content TEXT COMMENT '题目内容(富文本)',
     options JSON COMMENT '选项(JSON数组)',
@@ -108,15 +126,19 @@ CREATE TABLE IF NOT EXISTS quiz_question (
     tags JSON COMMENT '标签(JSON数组)',
     attachments JSON COMMENT '附件(图片/音频/视频)',
     status TINYINT DEFAULT 1 COMMENT '状态(0:草稿 1:已发布 2:待审核)',
+    is_disabled TINYINT DEFAULT 0 COMMENT '禁用标记(0:启用 1:禁用)',
     created_by BIGINT COMMENT '创建人',
     updated_by BIGINT COMMENT '更新人',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
     deleted TINYINT DEFAULT 0 COMMENT '删除标记',
     INDEX idx_category (category_id),
+    INDEX idx_bank_id (bank_id),
     INDEX idx_type (type),
     INDEX idx_difficulty (difficulty),
-    INDEX idx_status (status)
+    INDEX idx_status (status),
+    INDEX idx_is_disabled (is_disabled),
+    CONSTRAINT fk_bank_id FOREIGN KEY (bank_id) REFERENCES quiz_bank(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='题目表';
 
 -- ============================
@@ -156,6 +178,7 @@ CREATE TABLE IF NOT EXISTS quiz_session (
     config JSON COMMENT '场次配置(JSON)',
     question_ids JSON COMMENT '题目ID列表(JSON数组)',
     current_question_index INT DEFAULT -1 COMMENT '当前题目索引',
+    countdown_seconds INT DEFAULT 10 COMMENT '开始前倒计时秒数',
     start_time DATETIME COMMENT '开始时间',
     end_time DATETIME COMMENT '结束时间',
     scheduled_start DATETIME COMMENT '计划开始时间',
@@ -179,6 +202,7 @@ CREATE TABLE IF NOT EXISTS quiz_session_participant (
     wrong_count INT DEFAULT 0 COMMENT '错误题数',
     buzz_count INT DEFAULT 0 COMMENT '抢答次数',
     buzz_success_count INT DEFAULT 0 COMMENT '抢答成功次数',
+    answered_count INT DEFAULT 0 COMMENT '已答题数',
     rank INT COMMENT '排名',
     joined_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '加入时间',
     INDEX idx_session (session_id),
@@ -227,6 +251,21 @@ CREATE TABLE IF NOT EXISTS quiz_answer_log (
     INDEX idx_team (team_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='答题记录表';
 
+-- 排行版配置表
+CREATE TABLE IF NOT EXISTS quiz_leaderboard_config (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '配置ID',
+    session_id BIGINT NOT NULL COMMENT '场次ID',
+    leaderboard_name VARCHAR(100) NOT NULL COMMENT '排行版名称',
+    display_fields JSON COMMENT '显示字段配置(JSON)',
+    sort_type TINYINT DEFAULT 1 COMMENT '排序方式(1:得分降序 2:答题数降序)',
+    created_by BIGINT COMMENT '创建人',
+    updated_by BIGINT COMMENT '更新人',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_session_id (session_id),
+    CONSTRAINT fk_leaderboard_session_id FOREIGN KEY (session_id) REFERENCES quiz_session(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='排行版配置表';
+
 -- ============================
 -- 5. 系统通知
 -- ============================
@@ -267,6 +306,21 @@ CREATE TABLE IF NOT EXISTS sys_config (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='系统配置表';
+
+-- 文件记录表
+CREATE TABLE IF NOT EXISTS sys_file (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT COMMENT '文件ID',
+    file_name VARCHAR(255) NOT NULL COMMENT '原始文件名',
+    file_path VARCHAR(255) NOT NULL COMMENT '存储路径',
+    file_type VARCHAR(50) COMMENT '文件类型(audio/video/image)',
+    file_size BIGINT COMMENT '文件大小(字节)',
+    mime_type VARCHAR(100) COMMENT 'MIME类型',
+    uploaded_by BIGINT COMMENT '上传人ID',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+    deleted TINYINT DEFAULT 0 COMMENT '删除标记',
+    INDEX idx_uploaded_by (uploaded_by),
+    INDEX idx_file_type (file_type)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='文件记录表';
 
 -- 操作日志表
 CREATE TABLE IF NOT EXISTS sys_operation_log (
@@ -315,7 +369,9 @@ INSERT INTO sys_config (config_key, config_value, config_type, description) VALU
 ('score_wrong', '0', 'number', '答错得分'),
 ('score_timeout', '0', 'number', '超时得分'),
 ('enable_buzz_sound', 'true', 'boolean', '启用抢答音效'),
-('max_team_members', '5', 'number', '队伍最大人数');
+('max_team_members', '5', 'number', '队伍最大人数'),
+('countdown_before_start', '10', 'number', '比赛开始前倒计时(秒)'),
+('file_upload_path', './uploads', 'string', '文件上传路径');
 
 -- 初始化题目分类
 INSERT INTO quiz_category (name, description, sort) VALUES
@@ -324,3 +380,7 @@ INSERT INTO quiz_category (name, description, sort) VALUES
 ('历史文化', '历史文化类题目', 3),
 ('时事政治', '时事政治类题目', 4),
 ('文学艺术', '文学艺术类题目', 5);
+
+-- 初始化题库
+INSERT INTO quiz_bank (name, description, total_questions, status, created_by) VALUES
+('默认题库', '系统默认题库', 0, 1, 1);

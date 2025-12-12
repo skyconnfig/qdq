@@ -3,6 +3,7 @@ import { ref, computed, h } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { NIcon, useMessage } from 'naive-ui'
 import { useUserStore } from '@/stores/user'
+import { hasPermission } from '@/config/roles'
 import {
   HomeOutline,
   PeopleOutline,
@@ -11,7 +12,9 @@ import {
   SettingsOutline,
   MenuOutline,
   LogOutOutline,
-  PersonOutline
+  PersonOutline,
+  PlayCircleOutline,
+  MicOutline
 } from '@vicons/ionicons5'
 
 const router = useRouter()
@@ -27,7 +30,9 @@ const iconMap: Record<string, any> = {
   PeopleOutline,
   LibraryOutline,
   TrophyOutline,
-  SettingsOutline
+  SettingsOutline,
+  PlayCircleOutline,
+  MicOutline
 }
 
 // 渲染图标
@@ -36,34 +41,104 @@ const renderIcon = (iconName: string) => {
   return icon ? () => h(NIcon, null, { default: () => h(icon) }) : undefined
 }
 
-// 菜单配置
-const menuOptions = computed(() => [
-  {
-    label: '工作台',
-    key: '/dashboard',
-    icon: renderIcon('HomeOutline')
-  },
-  {
-    label: '用户管理',
-    key: '/users',
-    icon: renderIcon('PeopleOutline')
-  },
-  {
-    label: '题库管理',
-    key: '/questions',
-    icon: renderIcon('LibraryOutline')
-  },
-  {
-    label: '比赛管理',
-    key: '/sessions',
-    icon: renderIcon('TrophyOutline')
-  },
-  {
-    label: '系统设置',
-    key: '/settings',
-    icon: renderIcon('SettingsOutline')
+// 菜单配置 - 根据用户角色动态生成
+const menuOptions = computed(() => {
+  const roles = userStore.userInfo?.roles || []
+  const isSuperAdmin = roles.includes('SUPER_ADMIN')
+  const isHost = roles.includes('HOST')
+  const isPlayer = roles.includes('PLAYER')
+  const isJudge = roles.includes('JUDGE')
+  
+  const menus = []
+  
+  // 超级管理员菜单
+  if (isSuperAdmin) {
+    menus.push(
+      {
+        label: '工作台',
+        key: '/dashboard',
+        icon: renderIcon('HomeOutline')
+      },
+      {
+        label: '用户管理',
+        key: '/users',
+        icon: renderIcon('PeopleOutline')
+      },
+      {
+        label: '题库管理',
+        key: '/questions',
+        icon: renderIcon('LibraryOutline')
+      },
+      {
+        label: '比赛管理',
+        key: '/sessions',
+        icon: renderIcon('TrophyOutline')
+      },
+      {
+        label: '系统设置',
+        key: '/settings',
+        icon: renderIcon('SettingsOutline')
+      }
+    )
   }
-])
+  // 主持人菜单
+  else if (isHost) {
+    menus.push(
+      {
+        label: '我的比赛',
+        key: '/host/sessions',
+        icon: renderIcon('TrophyOutline')
+      },
+      {
+        label: '系统设置',
+        key: '/settings',
+        icon: renderIcon('SettingsOutline')
+      }
+    )
+  }
+  // 选手菜单
+  else if (isPlayer) {
+    menus.push(
+      {
+        label: '我的比赛',
+        key: '/player/sessions',
+        icon: renderIcon('PlayCircleOutline')
+      },
+      {
+        label: '系统设置',
+        key: '/settings',
+        icon: renderIcon('SettingsOutline')
+      }
+    )
+  }
+  // 评委菜单
+  else if (isJudge) {
+    menus.push(
+      {
+        label: '我的比赛',
+        key: '/judge/sessions',
+        icon: renderIcon('MicOutline')
+      },
+      {
+        label: '系统设置',
+        key: '/settings',
+        icon: renderIcon('SettingsOutline')
+      }
+    )
+  }
+  // 默认菜单（观众或无角色）
+  else {
+    menus.push(
+      {
+        label: '观看比赛',
+        key: '/viewer/sessions',
+        icon: renderIcon('TrophyOutline')
+      }
+    )
+  }
+  
+  return menus
+})
 
 // 当前选中菜单
 const activeKey = computed(() => {
@@ -182,7 +257,18 @@ const handleUserAction = async (key: string) => {
               >
                 {{ userStore.userInfo?.name?.charAt(0) || 'U' }}
               </n-avatar>
-              <span class="user-name">{{ userStore.userInfo?.name || '用户' }}</span>
+              <div class="user-details">
+                <span class="user-name">{{ userStore.userInfo?.name || '用户' }}</span>
+                <span class="user-role">
+                  {{
+                    userStore.isAdmin ? '管理员' :
+                    userStore.isHost ? '主持人' :
+                    userStore.isJudge ? '评委' :
+                    userStore.isPlayer ? '选手' :
+                    userStore.isViewer ? '观众' : '用户'
+                  }}
+                </span>
+              </div>
             </div>
           </n-dropdown>
         </div>
@@ -275,9 +361,21 @@ const handleUserAction = async (key: string) => {
       background: $bg-hover;
     }
     
-    .user-name {
-      font-size: 14px;
-      color: $text-primary;
+    .user-details {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      
+      .user-name {
+        font-size: 14px;
+        color: $text-primary;
+        font-weight: 500;
+      }
+      
+      .user-role {
+        font-size: 12px;
+        color: $text-secondary;
+      }
     }
   }
 }

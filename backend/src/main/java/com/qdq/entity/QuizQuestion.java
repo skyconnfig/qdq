@@ -20,7 +20,10 @@ public class QuizQuestion {
     /** 分类ID */
     private Long categoryId;
 
-    /** 题型(1:单选 2:多选 3:判断 4:填空 5:主观) */
+    /** 所属题库ID */
+    private Long bankId;
+
+    /** 题型(1:单选 2:多选 3:判断 4:填空 5:主观 6:音频 7:视频) */
     private Integer type;
 
     /** 题目标题 */
@@ -57,6 +60,9 @@ public class QuizQuestion {
     /** 状态(0:草稿 1:已发布 2:待审核) */
     private Integer status;
 
+    /** 禁用标记(0:启用 1:禁用) */
+    private Integer isDisabled;
+
     /** 创建人 */
     private Long createdBy;
 
@@ -80,6 +86,10 @@ public class QuizQuestion {
     /** 分类名称 */
     @TableField(exist = false)
     private String categoryName;
+
+    /** 题库名称 */
+    @TableField(exist = false)
+    private String bankName;
 
     /** 创建人姓名 */
     @TableField(exist = false)

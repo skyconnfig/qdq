@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { TrophyOutline, PeopleOutline, LibraryOutline, PlayOutline } from '@vicons/ionicons5'
+import { getSessionList, getUserList, getQuestionList } from '@/api/modules'
+import { NTag } from 'naive-ui'
 
 const router = useRouter()
 
@@ -24,22 +26,38 @@ const quickActions = [
 const recentSessions = ref<any[]>([])
 
 // 加载数据
-onMounted(async () => {
-  // TODO: 从API加载真实数据
-  stats.value[0].value = 128
-  stats.value[1].value = 560
-  stats.value[2].value = 45
-  stats.value[3].value = 2
-  
-  recentSessions.value = [
-    { id: 1, name: '知识竞赛第一轮', status: 2, participantCount: 24, createdAt: '2024-01-15' },
-    { id: 2, name: '企业文化知识竞赛', status: 4, participantCount: 36, createdAt: '2024-01-10' },
-    { id: 3, name: '安全知识问答', status: 0, participantCount: 0, createdAt: '2024-01-08' }
-  ]
+const loadData = async () => {
+  try {
+    // 加载用户总数
+    const usersRes = await getUserList({ page: 1, pageSize: 1 })
+    stats.value[0].value = usersRes.data.total || 0
+    
+    // 加载题目总数
+    const questionsRes = await getQuestionList({ page: 1, pageSize: 1 })
+    stats.value[1].value = questionsRes.data.total || 0
+    
+    // 加载比赛场次
+    const sessionsRes = await getSessionList({ page: 1, pageSize: 1 })
+    stats.value[2].value = sessionsRes.data.total || 0
+    
+    // 加载进行中的比赛
+    const activeSessionsRes = await getSessionList({ page: 1, pageSize: 1, status: 2 })
+    stats.value[3].value = activeSessionsRes.data.total || 0
+    
+    // 加载最近比赛
+    const recentRes = await getSessionList({ page: 1, pageSize: 5 })
+    recentSessions.value = recentRes.data.records || []
+  } catch (error) {
+    console.error('加载数据失败:', error)
+  }
+}
+
+onMounted(() => {
+  loadData()
 })
 
 const getStatusTag = (status: number) => {
-  const map: Record<number, { type: string; text: string }> = {
+  const map: Record<number, { type: 'default' | 'info' | 'success' | 'warning' | 'error'; text: string }> = {
     0: { type: 'default', text: '草稿' },
     1: { type: 'info', text: '待开始' },
     2: { type: 'success', text: '进行中' },
@@ -110,10 +128,15 @@ const goTo = (route: string) => {
         <n-card title="最近比赛">
           <n-data-table
             :columns="[
-              { title: '比赛名称', key: 'name' },
-              { title: '状态', key: 'status', render: (row: any) => h('n-tag', { type: getStatusTag(row.status).type, size: 'small' }, () => getStatusTag(row.status).text) },
-              { title: '参与人数', key: 'participantCount' },
-              { title: '创建时间', key: 'createdAt' }
+              { title: '比赛名称', key: 'name', ellipsis: { tooltip: true } },
+              { 
+                title: '状态', 
+                key: 'status', 
+                width: 100,
+                render: (row: any) => h(NTag, { type: getStatusTag(row.status).type, size: 'small' }, () => getStatusTag(row.status).text) 
+              },
+              { title: '题目数', key: 'questionCount', width: 100 },
+              { title: '创建时间', key: 'createdAt', width: 180 }
             ]"
             :data="recentSessions"
             :bordered="false"
@@ -130,10 +153,6 @@ const goTo = (route: string) => {
     </n-grid>
   </div>
 </template>
-
-<script lang="ts">
-import { h } from 'vue'
-</script>
 
 <style lang="scss" scoped>
 .dashboard {

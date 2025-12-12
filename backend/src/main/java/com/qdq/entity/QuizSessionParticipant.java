@@ -38,6 +38,9 @@ public class QuizSessionParticipant {
     /** 抢答成功次数 */
     private Integer buzzSuccessCount;
 
+    /** 已答题数 */
+    private Integer answeredCount;
+
     /** 排名 */
     private Integer rank;
 

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, h } from 'vue'
-import { useMessage, useDialog, NButton, NTag, NSpace } from 'naive-ui'
-import { http } from '@/api/request'
-import { AddOutline, RefreshOutline, SearchOutline } from '@vicons/ionicons5'
+import { useMessage, useDialog, NButton, NTag, NSpace, type DataTableColumns } from 'naive-ui'
+import { getQuestionList, createQuestion, updateQuestion, deleteQuestion, batchDeleteQuestions, updateQuestionStatus, type Question, type QuestionQuery } from '@/api/modules'
+import { AddOutline, RefreshOutline, SearchOutline, TrashOutline, CheckmarkCircleOutline, ShuffleOutline } from '@vicons/ionicons5'
 
 const message = useMessage()
 const dialog = useDialog()
@@ -13,17 +13,16 @@ const total = ref(0)
 const showModal = ref(false)
 const modalTitle = ref('新建题目')
 
-const queryParams = reactive({
+const queryParams = reactive<QuestionQuery>({
   page: 1,
   pageSize: 10,
   keyword: '',
-  type: null as number | null,
-  difficulty: null as number | null,
-  status: null as number | null
+  type: null,
+  difficulty: null,
+  status: null
 })
 
-const formData = reactive({
-  id: null as number | null,
+const formData = reactive<Question>({
   type: 1,
   title: '',
   content: '',
@@ -40,6 +39,9 @@ const formData = reactive({
   tags: [],
   status: 0
 })
+
+// 批量操作
+const selectedRowKeys = ref<number[]>([])
 
 const typeOptions = [
   { label: '单选题', value: 1 },
@@ -61,7 +63,10 @@ const statusOptions = [
   { label: '待审核', value: 2 }
 ]
 
-const columns = [
+const columns: DataTableColumns<any> = [
+  {
+    type: 'selection'
+  } as any,
   { title: '题目', key: 'title', ellipsis: { tooltip: true } },
   {
     title: '题型',
@@ -77,9 +82,9 @@ const columns = [
     key: 'difficulty',
     width: 80,
     render: (row: any) => {
-      const colors = { 1: 'success', 2: 'warning', 3: 'error' }
+      const colors: Record<number, 'success' | 'warning' | 'error'> = { 1: 'success', 2: 'warning', 3: 'error' }
       const opt = difficultyOptions.find(o => o.value === row.difficulty)
-      return h(NTag, { type: colors[row.difficulty as keyof typeof colors], size: 'small' }, () => opt?.label || '-')
+      return h(NTag, { type: colors[row.difficulty], size: 'small' }, () => opt?.label || '-')
     }
   },
   { title: '分值', key: 'score', width: 80 },
@@ -88,9 +93,9 @@ const columns = [
     key: 'status',
     width: 80,
     render: (row: any) => {
-      const types = { 0: 'default', 1: 'success', 2: 'warning' }
+      const types: Record<number, 'default' | 'success' | 'warning'> = { 0: 'default', 1: 'success', 2: 'warning' }
       const opt = statusOptions.find(o => o.value === row.status)
-      return h(NTag, { type: types[row.status as keyof typeof types], size: 'small' }, () => opt?.label || '-')
+      return h(NTag, { type: types[row.status], size: 'small' }, () => opt?.label || '-')
     }
   },
   { title: '创建时间', key: 'createdAt', width: 180 },
@@ -108,7 +113,7 @@ const columns = [
 const loadData = async () => {
   loading.value = true
   try {
-    const res = await http.get('/questions', queryParams)
+    const res = await getQuestionList(queryParams)
     data.value = res.data.records || []
     total.value = res.data.total || 0
   } catch (error: any) {
@@ -135,7 +140,7 @@ const handleReset = () => {
 const handleCreate = () => {
   modalTitle.value = '新建题目'
   Object.assign(formData, {
-    id: null, type: 1, title: '', content: '',
+    id: undefined, type: 1, title: '', content: '',
     options: [{ key: 'A', value: '' }, { key: 'B', value: '' }, { key: 'C', value: '' }, { key: 'D', value: '' }],
     answer: '', analysis: '', score: 10, difficulty: 2, tags: [], status: 0
   })
@@ -156,8 +161,61 @@ const handleDelete = (row: any) => {
     negativeText: '取消',
     onPositiveClick: async () => {
       try {
-        await http.delete(`/questions/${row.id}`)
+        await deleteQuestion(row.id)
         message.success('删除成功')
+        loadData()
+      } catch (error: any) {
+        message.error(error.message)
+      }
+    }
+  })
+}
+
+// 批量删除
+const handleBatchDelete = () => {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请选择要删除的题目')
+    return
+  }
+  
+  dialog.warning({
+    title: '批量删除确认',
+    content: `确定要删除选中的 ${selectedRowKeys.value.length} 道题目吗？`,
+    positiveText: '确定',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        await batchDeleteQuestions(selectedRowKeys.value)
+        message.success('批量删除成功')
+        selectedRowKeys.value = []
+        loadData()
+      } catch (error: any) {
+        message.error(error.message)
+      }
+    }
+  })
+}
+
+// 批量更新状态
+const handleBatchUpdateStatus = (status: number) => {
+  if (selectedRowKeys.value.length === 0) {
+    message.warning('请选择要更新的题目')
+    return
+  }
+  
+  const statusText = statusOptions.find(o => o.value === status)?.label
+  
+  dialog.info({
+    title: '批量更新状态',
+    content: `确定要将选中的 ${selectedRowKeys.value.length} 道题目的状态更新为"${statusText}"吗？`,
+    positiveText: '确定',
+    negativeText: '取消',
+    onPositiveClick: async () => {
+      try {
+        // 批量更新，逐个调用
+        await Promise.all(selectedRowKeys.value.map(id => updateQuestionStatus(id, status)))
+        message.success('批量更新成功')
+        selectedRowKeys.value = []
         loadData()
       } catch (error: any) {
         message.error(error.message)
@@ -169,10 +227,10 @@ const handleDelete = (row: any) => {
 const handleSubmit = async () => {
   try {
     if (formData.id) {
-      await http.put(`/questions/${formData.id}`, formData)
+      await updateQuestion(formData.id, formData)
       message.success('更新成功')
     } else {
-      await http.post('/questions', formData)
+      await createQuestion(formData)
       message.success('创建成功')
     }
     showModal.value = false
@@ -189,10 +247,29 @@ onMounted(() => loadData())
   <div class="question-management">
     <div class="page-header">
       <h1 class="page-title">题库管理</h1>
-      <n-button type="primary" @click="handleCreate">
-        <template #icon><n-icon><AddOutline /></n-icon></template>
-        新建题目
-      </n-button>
+      <n-space>
+        <n-dropdown
+          v-if="selectedRowKeys.length > 0"
+          trigger="hover"
+          :options="[
+            { label: '批量删除', key: 'delete', icon: () => h(TrashOutline) },
+            { label: '设为草稿', key: 'status-0', icon: () => h(CheckmarkCircleOutline) },
+            { label: '设为已发布', key: 'status-1', icon: () => h(CheckmarkCircleOutline) }
+          ]"
+          @select="(key: string) => {
+            if (key === 'delete') handleBatchDelete()
+            else if (key.startsWith('status-')) handleBatchUpdateStatus(Number(key.split('-')[1]))
+          }"
+        >
+          <n-button>
+            批量操作 ({{ selectedRowKeys.length }})
+          </n-button>
+        </n-dropdown>
+        <n-button type="primary" @click="handleCreate">
+          <template #icon><n-icon><AddOutline /></n-icon></template>
+          新建题目
+        </n-button>
+      </n-space>
     </div>
     
     <n-card class="mb-md">
@@ -209,7 +286,12 @@ onMounted(() => loadData())
     </n-card>
     
     <n-card>
-      <n-data-table :columns="columns" :data="data" :loading="loading"
+      <n-data-table
+        v-model:checked-row-keys="selectedRowKeys"
+        :columns="columns"
+        :data="data"
+        :loading="loading"
+        :row-key="(row: any) => row.id"
         :pagination="{ page: queryParams.page, pageSize: queryParams.pageSize, itemCount: total, onChange: (p: number) => { queryParams.page = p; loadData() } }"
         striped />
     </n-card>

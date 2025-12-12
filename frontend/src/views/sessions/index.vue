@@ -2,7 +2,7 @@
 import { ref, reactive, onMounted, h } from 'vue'
 import { useRouter } from 'vue-router'
 import { useMessage, useDialog, NButton, NTag, NSpace } from 'naive-ui'
-import { http } from '@/api/request'
+import { getSessionList, createSession, updateSession, deleteSession, type Session, type SessionQuery } from '@/api/modules'
 import { AddOutline, RefreshOutline, SearchOutline, PlayOutline, DesktopOutline } from '@vicons/ionicons5'
 
 const router = useRouter()
@@ -15,20 +15,20 @@ const total = ref(0)
 const showModal = ref(false)
 const modalTitle = ref('新建比赛')
 
-const queryParams = reactive({
+const queryParams = reactive<SessionQuery>({
   page: 1,
   pageSize: 10,
   keyword: '',
-  status: null as number | null
+  status: null
 })
 
-const formData = reactive({
-  id: null as number | null,
+const formData = reactive<Session & { scheduledStartTimestamp?: number | null }>({
   name: '',
   description: '',
   mode: 1,
-  questionIds: [] as number[],
-  scheduledStart: null as string | null
+  questionIds: [],
+  scheduledStart: undefined,
+  scheduledStartTimestamp: null
 })
 
 const statusOptions = [
@@ -102,7 +102,7 @@ const columns = [
 const loadData = async () => {
   loading.value = true
   try {
-    const res = await http.get('/sessions', queryParams)
+    const res = await getSessionList(queryParams)
     data.value = res.data.records || []
     total.value = res.data.total || 0
   } catch (error: any) {
@@ -127,7 +127,7 @@ const handleReset = () => {
 const handleCreate = () => {
   modalTitle.value = '新建比赛'
   Object.assign(formData, {
-    id: null, name: '', description: '', mode: 1, questionIds: [], scheduledStart: null
+    id: undefined, name: '', description: '', mode: 1, questionIds: [], scheduledStart: undefined, scheduledStartTimestamp: null
   })
   showModal.value = true
 }
@@ -140,7 +140,7 @@ const handleDelete = (row: any) => {
     negativeText: '取消',
     onPositiveClick: async () => {
       try {
-        await http.delete(`/sessions/${row.id}`)
+        await deleteSession(row.id)
         message.success('删除成功')
         loadData()
       } catch (error: any) {
@@ -152,11 +152,16 @@ const handleDelete = (row: any) => {
 
 const handleSubmit = async () => {
   try {
+    // 转换时间戳为字符串
+    if (formData.scheduledStartTimestamp) {
+      formData.scheduledStart = new Date(formData.scheduledStartTimestamp).toISOString()
+    }
+    
     if (formData.id) {
-      await http.put(`/sessions/${formData.id}`, formData)
+      await updateSession(formData.id, formData)
       message.success('更新成功')
     } else {
-      await http.post('/sessions', formData)
+      await createSession(formData)
       message.success('创建成功')
     }
     showModal.value = false
@@ -209,8 +214,8 @@ onMounted(() => loadData())
             <n-radio v-for="opt in modeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</n-radio>
           </n-radio-group>
         </n-form-item>
-        <n-form-item label="开始时间" path="scheduledStart">
-          <n-date-picker v-model:value="formData.scheduledStart" type="datetime" placeholder="选择计划开始时间" clearable style="width: 100%" />
+        <n-form-item label="开始时间" path="scheduledStartTimestamp">
+          <n-date-picker v-model:value="formData.scheduledStartTimestamp" type="datetime" placeholder="选择计划开始时间" clearable style="width: 100%" />
         </n-form-item>
       </n-form>
       <template #action>

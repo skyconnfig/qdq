@@ -190,6 +190,33 @@ public class WebSocketMessageService {
     }
 
     /**
+     * 广播排行版
+     */
+    public void broadcastLeaderboard(Long quizSessionId, List<Map<String, Object>> leaderboard) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("leaderboard", leaderboard);
+        broadcastToSession(quizSessionId, "leaderboard_update", data);
+    }
+
+    /**
+     * 广播答题进度
+     */
+    public void broadcastAnswerProgress(Long quizSessionId, Map<String, Object> progressMap) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("progress", progressMap);
+        broadcastToSession(quizSessionId, "answer_progress_update", data);
+    }
+
+    /**
+     * 广播排行版配置更新
+     */
+    public void broadcastLeaderboardConfig(Long quizSessionId, String leaderboardName) {
+        Map<String, Object> data = new HashMap<>();
+        data.put("leaderboardName", leaderboardName);
+        broadcastToSession(quizSessionId, "leaderboard_config_update", data);
+    }
+
+    /**
      * 获取场次在线人数
      */
     public int getSessionOnlineCount(Long quizSessionId) {

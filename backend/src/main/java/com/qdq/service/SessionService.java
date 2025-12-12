@@ -35,6 +35,8 @@ public class SessionService extends ServiceImpl<QuizSessionMapper, QuizSession> 
 
     private static final String SESSION_CACHE_KEY = "quiz:session:";
     private static final String SESSION_STATE_KEY = "quiz:session:state:";
+    private static final String COUNTDOWN_KEY = "quiz:session:countdown:";
+    private static final String ANSWER_PROGRESS_KEY = "quiz:session:progress:";
 
     public SessionService(QuestionService questionService, RedisTemplate<String, Object> redisTemplate) {
         this.questionService = questionService;
@@ -153,6 +155,35 @@ public class SessionService extends ServiceImpl<QuizSessionMapper, QuizSession> 
         
         this.removeById(id);
         clearSessionCache(id);
+    }
+
+    /**
+     * 开始比赛(非估估计时)
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public QuizSession startWithCountdown(Long id, Integer countdownSeconds) {
+        QuizSession session = this.getById(id);
+        if (session == null) {
+            throw new BusinessException("场次不存在");
+        }
+
+        if (session.getQuestionIds() == null || session.getQuestionIds().isEmpty()) {
+            throw new BusinessException("请先添加题目");
+        }
+
+        // 设置倒计时秒数
+        if (countdownSeconds == null) {
+            countdownSeconds = 10; // 默认倒计10秒
+        }
+        session.setCountdownSeconds(countdownSeconds);
+        session.setStatus(1); // 待开始
+        this.updateById(session);
+
+        // 缓存倒计时信息到Redis
+        cacheCountdown(id, countdownSeconds);
+
+        log.info("比赛开始倒计时: {}秒", countdownSeconds);
+        return session;
     }
 
     /**
@@ -335,6 +366,43 @@ public class SessionService extends ServiceImpl<QuizSessionMapper, QuizSession> 
     private void cacheCurrentQuestion(Long sessionId, QuizQuestion question) {
         String key = SESSION_CACHE_KEY + sessionId + ":current_question";
         redisTemplate.opsForValue().set(key, question, 1, TimeUnit.HOURS);
+    }
+
+    /**
+     * 缓存倒计时信息
+     */
+    private void cacheCountdown(Long sessionId, Integer countdownSeconds) {
+        String key = COUNTDOWN_KEY + sessionId;
+        redisTemplate.opsForValue().set(key, countdownSeconds, 1, TimeUnit.HOURS);
+    }
+
+    /**
+     * 获取倒计时秒数
+     */
+    public Integer getCountdownSeconds(Long sessionId) {
+        String key = COUNTDOWN_KEY + sessionId;
+        Object value = redisTemplate.opsForValue().get(key);
+        return value != null ? Integer.parseInt(value.toString()) : 10;
+    }
+
+    /**
+     * 跟新答题进度
+     */
+    public void updateAnswerProgress(Long sessionId, Long userId, Integer answeredCount) {
+        String key = ANSWER_PROGRESS_KEY + sessionId;
+        Map<String, Object> progress = new java.util.HashMap<>();
+        progress.put("userId", userId);
+        progress.put("answeredCount", answeredCount);
+        progress.put("timestamp", System.currentTimeMillis());
+        redisTemplate.opsForHash().put(key, userId.toString(), progress);
+    }
+
+    /**
+     * 获取整体答题进度
+     */
+    public Map<Object, Object> getAnswerProgressMap(Long sessionId) {
+        String key = ANSWER_PROGRESS_KEY + sessionId;
+        return redisTemplate.opsForHash().entries(key);
     }
 
     /**
